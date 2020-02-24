@@ -1,0 +1,175 @@
+#!/bin/bash -e
+# Simple control over a Tesmart KVM using the LAN port. Much of this has
+# been hardcoded due to limited functionality, a full description of the
+# device and the protocol is toward the end of the file.
+
+# Network Address
+ADDRESS="192.168.1.10 5000"
+
+# The number of ports available on the KVM
+PORTS=8
+
+# Prints the command usage and exits
+function usage {
+  progname=$(basename $0)
+  echo "$progname -- Controls a Tesmart KVM using TCP/IP"
+  echo "Usage:"
+  printf "  %-21.20s: %-20s\n" "${progname} get" "Retrieves the active port number."
+  printf "  %-21.20s: %-20s\n" "${progname} set <1-${PORTS}>" "Retrieves the active port number."
+  printf "  %-21.20s: %-20s\n" "${progname} buzzer <0|1>" "Turns the buzzer off (0) or on (1)."
+  printf "  %-21.20s: %-20s\n" "${progname} lcd <0|10|30>" "Disable or set the LCD timeout."
+  exit 0;
+}
+
+# If communication fails, a value outside of range, "0xFF", so when it
+# has been received by the caller there is an option to retry. Enforce
+# a one-second sleep in-between retries here.
+function sendCommand {
+  echo -e "AABB03${1}EE" | \
+    xxd -r -p | \
+    nc 192.168.1.10 5000 | \
+    xxd -s4 -l1 -p 2>/dev/null || echo ff
+  sleep 1
+}
+
+# Mutes and unmutes the buzzer. We receive the output from the "API" but
+# the output is ignored because it's unreliable. Hardware cares nothing
+# about development best practices. It eats best practices for breakfast.
+function setBuzzer {
+  case $1 in
+    0) out=$(sendCommand 0200)
+       echo "Buzzer muted."
+       ;;
+    1) out=$(sendCommand 0201)
+       echo "Buzzer unmuted."
+       ;;
+    *) echo "Buzzer only accepts 0 (off) or 1 (on)."
+       exit 1
+       ;;
+  esac
+}
+
+# Sets the timeout value of the LCD. This does not appear to affect the
+# LED lighting on the 8-port Tesmart switch but does appear on the 16-port
+# documentation. This is treated similar to the buzzer settings.
+function setLCDTimeout {
+  case $1 in
+    0) out=$(sendCommand 0300)
+       echo "LCD Timeout Disabled."
+       ;;
+    10) out=$(sendCommand 030A)
+       echo "LCD Timeout set to 10 seconds."
+       ;;
+    30) out=$(sendCommand 031E)
+       echo "LCD Timeout set to 30 seconds."
+       ;;
+    *) echo "Buzzer only accepts 0 (off) or 1 (on)."
+       exit 1
+       ;;
+  esac
+}
+
+# Send the command 0x10 0x00 to read the current active port, retrying
+# up to three times if the command fails. The function will either return
+# the current port number or an error if communication failed.
+function getPort {
+  for ((i=0; i<3; i++)); do
+    out=$(sendCommand "1000")
+    if [[ $out != ff ]]; then break; fi
+  done
+
+  if [[ $out == ff ]]; then
+    echo "Unable to retrieve current port."
+    exit 1
+  fi
+
+  echo $((16#$out+1));
+}
+
+# Sets the current active port. This is the only function with an actual
+# range check as the number must be between 1 and $PORTS and is the only
+# function that requires a calculation for decimal to hex conversion.
+function setPort {
+  if [[ ${1} -lt 1 || ${1} -gt ${PORTS} ]]; then
+    echo "Invalid port specified. Range is 1 to $PORTS."
+    exit 1
+  fi
+
+  # Use the function to read the current port rather than relying on the
+  # potentially unreliable output when the KVM UART first wakes up.
+  # If the port is already active, don't change, just print the port.
+  oldport=$(getPort)
+  if [[ ${oldport} -eq ${1} ]]; then
+    echo "Port $oldport is already active."
+    exit 0
+  fi
+
+  # Collect the output but don't rely on it. The command may still be
+  # successful but won't print the new port number anyway.
+  hexval=$(printf '%.2X\n' ${1})
+  out=$(sendCommand "01${hexval}")
+
+  # If a valid value was returned when the port was changed, it would have
+  # returned the previous value. Attempt to give confirmation to the user
+  # that the port was actually changed.
+  newport=$(getPort)
+  echo "Port changed from ${oldport} to ${newport}."
+}
+
+# Simple case statement to process the options
+case $1 in
+  get) echo "The current port is $(getPort)";
+    ;;
+  set) setPort $2;
+    ;;
+  buzzer) setBuzzer $2;
+    ;;
+  lcd) setLCDTimeout $2;
+    ;;
+  *) usage
+esac
+
+# PROTOCOL INFORMATION
+#
+# The Tesmart HDMI KVM (8 and 16 port) offers serial and basic LAN control
+# using an Ethernet to UART chipset similar or identical to the CH9120 or
+# the CH9121 (http://www.chinalctech.com/m/view.php?aid=468). This device
+# may be configurable with direct access to the UART using the supplier's
+# configuration utility.
+#
+# Factory settings from Tesmart assume no DHCP and a fixed address and
+# subnet (192.168.1.10/24) and is configured for port 5000/tcp. It is
+# possible they considered DHCP would not be available for autoconfiguration
+# and that the chipset does not support a default IP when DHCP is not
+# available on the customer's network.
+#
+# Updating the firmware is possible with a utility from the part supplier
+# with direct access to the UART. It does not appear to be possible to
+# change the values using `arp` or other utility.
+#
+# The Tesmart KVM uses the chipset to allow communication between the LAN
+# and the UART without direct serial connection. A serial or serial to USB
+# cable may be preferred when the switch is physically colocated with the
+# control equipment but does not enable additional features.
+#
+# Controlling the KVM
+# Whether using serial or ethernet communication, a simple binary protocol
+# expressed in hexidecimal code is used in the format
+#
+#    0xAA 0xBB 0x03 0x.. 0x.. 0xEE
+#
+# The two bytes following the preamble and before the termination sequence
+# are command and value respectively. In short these are:
+#
+#     0x01 - Change the active KVM port (1-based index from 0x01-0x10)
+#     0x02 - Set the buzzer on or off (0x00 for off, 0x01 for on)
+#     0x03 - Set the display timeout (0x00, 0x0A, 0x1E for never, 10s, 30s)
+#     0x10 - Read the active port number (0-based index from 0x00-0x0f)
+#
+# On successful communication, the expected response is
+#
+#     0xAA 0xBB 0x03 0x11 0x.. 0xEE
+#
+# While the last byte is always expected to be 0xEE, it appears this may
+# vary based on the active port. It also appears on transmission it may
+# ignore the value of the last byte received.

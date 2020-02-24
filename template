@@ -1,0 +1,290 @@
+#!/bin/bash
+# Personal template for bash scripts and rapid prototyping. This was not
+# fast to write, but useful as an exercise in array and string functions
+# using Bash and to provide repeatable patterns for rapid prototyping.
+#
+# THIS CODE IS POTENTIALLY UNSAFE. A PROTOTYPE IS NOT PRODUCTION CODE!
+#
+# While there are built-ins and external commands capable of doing some
+# of the things here, as a user there is little or no control over the
+# way command line arguments and options are processed. Because I wrote
+# these functions here I can change the behavior based on what is needed
+# rather than be limited to what is available.
+
+# Set this flag to exit on failure
+set -e
+
+# Logging and verbosity. With logging disabled, loglevel controls only the
+# verbosity of the output. When logging is set to console, verbose has no
+# effect as all log output is already directed to the console.
+#LOGGING=console
+FACILITY=user
+LOGLEVEL=notice
+VERBOSE=false
+
+# _LONGOPTS defines the usage text. Optionally this option can be used
+# to define whether or not options should be restricted to that set.
+declare -A _LONGOPTS=(
+  [verbose]="Default: \"$VERBOSE\". Enables/disables verbose output."
+  [logging]="Default: \"$LOGGING\". Valid options: syslog, console."
+  [loglevel]="Default \"$LOGLEVEL\", the desired log level for the script."
+  [name]="Just \"--name\", no argument. Remember, this is an example!"
+  [color]="The name of a color, like \"cornflower blue\", in quotes."
+)
+
+# If this is not 0 the options will be restricted to those declared in
+# the _LONGOPTS map above.
+_RESTRICT_OPTIONS=1
+
+# List of options that require an argument
+_WITHARGS=(COLOR)
+
+# For completeness of an example for log levels and event handling, here
+# are the syslog severity levels we will use to filter output. Note crit
+# and higher generally indicate higher conditions than a script failure
+# would indicate, unless there is an actual fire, stick to err or lower.
+#
+# Deprecated versions of the keywords are included in the array so a user
+# may use "err" (preferred) or "error" (non-preferred). Note when using
+# a logger, such as syslog, facility.priority is numeric. When searching
+# for the key name by value, the ordering of this array is significant.
+declare -A _SEVERITY=(
+  [emerg]=0 [panic]=0 [alert]=1 [crit]=2 [err]=3 [error]=3 [warning]=4
+  [warn]=4 [notice]=5 [info]=6 [debug]=7
+)
+
+# An additional array mapping the errors levels to their descriptions.
+# I'm using this when printing the message to STDERR in this script but
+# these would not typically be sent to a logger. Mappings for deprecated
+# keywords have been included here as well.
+declare -A _SEVERITY_NAME=( [emerg]=Emergency [panic]=Panic [alert]=Alert
+  [crit]=Critical [err]=Error [error]=Error [warning]=Warning [warn]=Warning
+  [notice]=Notice [info]=Informational [debug]=Debug
+)
+
+# This is not meant to be fully inclusive. The user facility should be the
+# one that I use the most but local0 through local7 are useful to identify
+# different threads that are part of the same script or program.
+declare -A _FACILITY=( [user]=0 [local0]=16 [local1]=17 [local2]=18
+  [local3]=19 [local4]=20 [local5]=21 [local6]=22 [local7]=23
+)
+
+# Handle event logging
+function eventLog {
+  local priority=${1,,} && shift
+  local numericPriority=${_SEVERITY[$priority]}
+  local numericLogLevel=${_SEVERITY[${LOGLEVEL,,}]}
+  local numericFacility=${_FACILITY[${FACILITY,,}]}
+
+  # Provided limited traceback functionality going back one level
+  # deep. Bash appears to prepend to this array, at least for now.
+  local traceback=${FUNCNAME[1]}
+  if [[ ${#FUNCNAME[*]} -gt 2 ]]; then
+    traceback="${FUNCNAME[1]} (from ${FUNCNAME[2]})"
+  fi
+
+  # Return if the priority is greater than the log threshold. The higher
+  # the priority number, the lower the priority is.
+  if [[ ${numericPriority} -gt ${numericLogLevel} ]]; then
+    return;
+  fi
+
+  # Print the log message to the console is verbose or if logging is
+  # set to the console (example, container logging)
+  if [[ "${VERBOSE}" == "true" || ${LOGGING} == "console" ]]; then
+    echo "${priority^^}: ${traceback}: $@" >&2
+  fi
+
+  # I wasn't going to include this but looked simple enough to do with
+  # logging(1) so I went ahead and stubbed it out with syslog support
+  # in this script. Given the script doesn't actually _do_ anything the
+  # example serves as a reminder of what can be done at least.
+  case $LOGGING in
+    syslog)
+      logger --id $$ \
+      --priority="${numericFacility}.${numericPriority}" \
+      "${traceback}: ${@}"
+      ;;
+    journald)
+      :: # Support the option but don't take action
+      ;;
+   esac
+}
+
+# usage - Print script usage information. This may be improved upon using
+# terminfo and tput.
+function usage {
+  # Generic usage, should be based on requirements
+  echo "Usage: $0 <COMMAND> [OPTIONS]"
+  echo "  Options:";
+  printMap '  * %-15.14s: %-58.57s\n' _LONGOPTS
+}
+
+# inArray - Evaluates a token against an array, returns 1 if the token
+# is within the array of tokens following.
+function inArray {
+  local i matches=0;
+  eventLog debug "Checking for $1"
+  for ((i=2; i<=$#; i++)); do
+    eventLog debug "$1 <=> ${@:i:1}"
+    if [[ "${1}" == "${@:i:1}" ]]; then
+      eventLog debug "Match for $1"
+      matches=$((matches+1))
+    fi
+  done
+
+  # Send the number of matches to the eventLog handler
+  if [[ $matches -eq 1 ]]; then
+    eventLog debug "Found $matches match."
+  else
+    eventLog debug "Found $matches matches."
+  fi
+
+  # Send the number of matches as both an output and return code
+  echo $matches
+}
+
+# Given a format and a set of array keys, print the key/value pairs
+# according to the given format. The view size should be calculated,
+# if required, prior to calling the function.
+function printArray {
+  local format=$1 && shift
+  for key in $@; do
+    eval value=\$$key
+    printf "$format" "$key" "$value"
+  done
+}
+
+# Prints an associative array, map, or hash using pass by variable
+# reference, available in Bash 4.3 and later.
+function printMap {
+  local format=$1
+  local -n map=$2
+  for key in ${!map[*]}; do
+    value=${map[$key]}
+    printf "$format" "$key" "${map[$key]}"
+  done
+}
+
+# Main script (no variables may be defaulted below)
+#
+# Nasty alternative to GNU getopt(1) and Bash getopts which are harder
+# to use for rapid testing. The upshot is I get to run code with the
+# variable(s) defined in my command invocation, provided I do not have
+# an option set to restrict the options.
+#
+# The upside is some code can be fixed via the CLI, the potential downside
+# is code that's more difficult to troubleshoot or less secure. I don't
+# like that getopt(1) will accept an option as an argument, this has a
+# potential to be difficult to debug while POSIX is just annoying.
+declare -A _OPTIONS
+for ((i=1; i<=$#; i++)); do
+  # Skip commands and unmatched arguments
+  if [[ ! ${@:i:1} =~ ^- ]]; then
+    continue
+  fi
+
+  # Remove token from array without reordering
+  token=${@:i:1} && set -- "${@:1:i-1}" "${@:i+1}"
+
+  # If the token is identified as a help token, denoted by
+  # --help, -h, or -?, print usage and exit (escape hatch).
+  if [[ ${token} =~ ^--help$|^-[h?] ]]; then
+    usage
+    exit 0
+  fi
+
+  # The token "--" means stop option processing
+  if [[ "${token}" == "--" ]]; then
+    break;
+  fi
+
+  # Set the key for potential key=value pair matching
+  key=${token##*-}; key=${key%=*};
+
+  # Transform or normalize the key to change characters, such as a dash,
+  # to an underscore, change letters to upper or lowercase, etc.
+  if [[ ! ${_TRANSFORM} || ${_TRANSFORM} == "toUpper" ]]; then
+    key=${key^^}
+  elif [[ ${_TRANSFORM} == "toLower" ]]; then
+    key=${key,,}
+  fi
+
+  # Change dashes to underscores (compatible for use as variables)
+  key=$(echo $key | tr '-' '_')
+
+  # Variables starting with "_" like "_LONGOPTS=" are considered static
+  # internal definitions in my personal coding standard and should not
+  # be accepted as a valid option key.
+  if [[ ${token} =~ ^_ ]]; then
+    eventLog err "Invalid Option: Options may not start with \"_\"."
+    exit 1
+  fi
+
+  # Restrict the options to those defined in the usage function.
+  if [[ ${_RESTRICT_OPTIONS} != 0 ]]; then
+    eventLog debug "Before checking if $token is a valid option."
+    VALID_OPTIONS=(${!_LONGOPTS[*]})
+    eventLog info "Checking if ${key,,} is in ${VALID_OPTIONS[*],,}"
+    matches=$(inArray ${key,,} ${VALID_OPTIONS[*],,})
+    if [[ ${matches} -eq 0 ]]; then
+      eventLog err "Invalid Option: ${token} is not a valid option."
+      exit 1
+    fi
+    eventLog debug "After checking if $token is a valid option."
+  fi
+
+  # The value, if any, is after the '=' sign. This is using a single #
+  # so any extra "=" is treated as part of the value. As a literal any
+  # leading dashes will be considered intentional, not an error.
+  if [[ ${token} =~ = ]]; then
+    value=${token#*=}
+  else
+    # If not assigned, reset from prior run before checking
+    unset value
+  fi
+
+  if [[ ${value} ]]; then
+    eventLog debug "Split \"${token}\" into \"${key}\" and \"${value}\"."
+  else
+    eventLog debug "Transformed \"${token}\" into \"${key}\"."
+  fi
+
+  # If an option needs an argument, grab the next argument unless the
+  # next token appears to be an option.
+  eventLog debug "Checking if $key is required"
+  matches=$(inArray ${key,,} ${_WITHARGS[*],,})
+  if [[ $matches -ne 0 && ! -v ${value} ]]; then
+    eventLog debug "$key is required option. Checking for valid argument."
+    if [[ ! ${@:i:1} =~ ^- ]]; then
+      value=${@:i:1} && set -- "${@:1:i-1}" "${@:i+1}"
+      eventLog debug "Option \"${key}\" set to \"${value}\"."
+    else
+      eventLog err "Option ${key} is missing a required argument."
+      exit 1
+    fi
+  fi
+
+  # Set key=value or key=1 if value undefined
+  if [[ -n "${value}" ]]; then
+    eval ${key}="${value}"
+    eventLog info "Set the value of ${key} to \"${value}\"."
+  else
+    value=true && eval ${key}=$value
+    eventLog info "Assigned $value to \"${key}\"."
+  fi
+
+  # Add the key onto the _OPTIONS array if assignment successful.
+  _OPTIONS[$key]="$value"
+
+  # The current option was not evaluated. Back up the pointer to
+  # keep the loop in the same place on the next execution.
+  i=$((i-1))
+done
+
+############################################################################
+# Prototype Section
+
+echo $0 called with $@
+echo options set:
+printMap '  * %-15.14s: %-58.57s\n' _OPTIONS

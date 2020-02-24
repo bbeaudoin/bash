@@ -1,0 +1,28 @@
+#!/bin/bash
+
+# Add the CyberPower Systems MIB from ~/.snmp/mibs
+MIBS=+CPS-MIB
+
+function setOutletOff {
+  snmpset -v1 -c private 10.0.2.7 atsOutletCtrlCommand.$1 i immediateOff
+}
+
+function setOutletOn {
+  snmpset -v1 -c private 10.0.2.7 atsOutletCtrlCommand.$1 i immediateOn
+}
+
+function getOutletState {
+  snmpget -v1 -c private 10.0.2.7 atsOutletStatusOutletState.$1
+}
+
+case $1 in
+  on) setOutletOn $2;
+    ;;
+  off) setOutletOff $2;
+    ;;
+  state) getOutletState $2;
+    ;;
+  *)
+    echo "Usage: power [on|off|state] [port#]"
+    ;;
+esac
