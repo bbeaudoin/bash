@@ -39,6 +39,55 @@ _RESTRICT_OPTIONS=1
 # List of options that require an argument
 _WITHARGS=(COLOR)
 
+############################################################################
+# Boilerplate
+#
+# Here are static definitions of variables as opposed to user-defined
+# variables that may or may not be the same. These should generally be
+# used as-is, more information included with each variable.
+#
+# As an exec is required for the subshell expansions, these are commented
+# out here by default. If not already defined, these may be defined where
+# they are needed and only if used for performance.
+
+# The program name (without directory) is used with usage and error messages.
+_PROGNAME=$(basename $0)
+
+# The dirname is the directory in which the program is located.
+#_DIRNAME=$(dirname $0)
+
+# The present working directory. The static definition should not be
+# redefined, rather refer to this if PWD needs to be reset.
+#_PWD=$(pwd)
+
+# The internal file separator. This may be redefined within a function as
+# a local IFS without interfering with the main function but a function
+# called from another function can reset the IFS for the caller. A copy
+# of the IFS can be used to reset the IFS if need be.
+#_IFS=${IFS}
+
+# General network information. When this is information is needed, it can
+# be handy to have both a staticly defined (in this case system provided)
+# along with a user-defined version for purpose of comparison.
+#_HOSTNAME=$(hostname -f)
+#_DOMAIN=$(hostname -d)
+#_IPADDRESS=$(hostname -i)
+
+# Full release name and version. Situationally useful, often the version
+# itself is more applicable to the use case than the textual description
+# of the release (lsb_release -rs).
+#_RELEASE=$(lsb_release -ds)
+
+# Primary Interface. Useful for some scripting making use of networking
+#_INTERFACE=$(ip route show default|awk '{print $5}')
+
+# IP Address in CIDR notation. Also situationally useful, requires first
+# identifying the interface using the default route method.
+#_CIDRADDRESS=(ip addr show dev ${_INTERFACE}|awk '/inet / {print $2}')
+
+############################################################################
+# Logging Configuration
+#
 # For completeness of an example for log levels and event handling, here
 # are the syslog severity levels we will use to filter output. Note crit
 # and higher generally indicate higher conditions than a script failure
@@ -116,7 +165,7 @@ function eventLog {
 # terminfo and tput.
 function usage {
   # Generic usage, should be based on requirements
-  echo "Usage: $0 <COMMAND> [OPTIONS]"
+  echo "Usage: ${_PROGNAME} <COMMAND> [OPTIONS]"
   echo "  Options:";
   printAssociativeArray '  * %-15.14s: %-58.57s\n' _LONGOPTS
 }
@@ -318,7 +367,7 @@ done
 # This is where I would put my prototype code and functions. Here are small
 # tests of the code written above that weren't tested as such above.
 
-echo $0 called with $@
+echo $_PROGNAME called with $@
 
 echo "Options set on the CLI:"
 printAssociativeArray '  * %-15.14s: %-58.57s\n' _OPTIONS
