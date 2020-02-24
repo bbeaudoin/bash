@@ -37,10 +37,10 @@ function sendCommand {
 # about development best practices. It eats best practices for breakfast.
 function setBuzzer {
   case $1 in
-    0) out=$(sendCommand 0200)
+    0) out=$(sendCommand "0200")
        echo "Buzzer muted."
        ;;
-    1) out=$(sendCommand 0201)
+    1) out=$(sendCommand "0201")
        echo "Buzzer unmuted."
        ;;
     *) echo "Buzzer only accepts 0 (off) or 1 (on)."
@@ -54,13 +54,13 @@ function setBuzzer {
 # documentation. This is treated similar to the buzzer settings.
 function setLCDTimeout {
   case $1 in
-    0) out=$(sendCommand 0300)
+    0) out=$(sendCommand "0300")
        echo "LCD Timeout Disabled."
        ;;
-    10) out=$(sendCommand 030A)
+    10) out=$(sendCommand "030A")
        echo "LCD Timeout set to 10 seconds."
        ;;
-    30) out=$(sendCommand 031E)
+    30) out=$(sendCommand "031E")
        echo "LCD Timeout set to 30 seconds."
        ;;
     *) echo "Buzzer only accepts 0 (off) or 1 (on)."
