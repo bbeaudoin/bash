@@ -69,7 +69,8 @@ declare -A _FACILITY=( [user]=0 [local0]=16 [local1]=17 [local2]=18
   [local3]=19 [local4]=20 [local5]=21 [local6]=22 [local7]=23
 )
 
-# Handle event logging
+# Event handler with basic logging support for console and syslog. I had
+# considered adding journald support but have done enough for a weekend.
 function eventLog {
   local priority=${1,,} && shift
   local numericPriority=${_SEVERITY[$priority]}
@@ -117,85 +118,103 @@ function usage {
   # Generic usage, should be based on requirements
   echo "Usage: $0 <COMMAND> [OPTIONS]"
   echo "  Options:";
-  printMap '  * %-15.14s: %-58.57s\n' _LONGOPTS
+  printAssociativeArray '  * %-15.14s: %-58.57s\n' _LONGOPTS
 }
 
-# inArray - Evaluates a token against an array, returns 1 if the token
-# is within the array of tokens following.
+# inArray - Searches an array for the existence of a string match. Returns
+# either 0 or the total number of time the string matched an array element.
 function inArray {
-  local i matches=0;
-  eventLog debug "Checking for $1"
-  for ((i=2; i<=$#; i++)); do
-    eventLog debug "$1 <=> ${@:i:1}"
-    if [[ "${1}" == "${@:i:1}" ]]; then
-      eventLog debug "Match for $1"
-      matches=$((matches+1))
+  local i matchnum=0 string=$1; shift
+  eventLog debug "Evaluating $1 (before loop)"
+  for ((i=1; i<=$#; i++)); do
+    if [[ "${string}" == "${@:i:1}" ]]; then
+      matchnum=$((matchnum+1))
+      eventLog debug "$string == ${@:i:1}"
+    else
+      eventLog debug "$string != ${@:i:1}"
     fi
   done
 
-  # Send the number of matches to the eventLog handler
-  if [[ $matches -eq 1 ]]; then
-    eventLog debug "Found $matches match."
-  else
-    eventLog debug "Found $matches matches."
-  fi
+  # Sends the debug message to the event handler. Given the English word
+  # should agree with the number, the singular form is returned for 1.
+  case $matchnum in
+    1) eventLog debug "Found $matchnum match for $string."
+       ;;
+    *) eventLog debug "Found $matchnum matches $string."
+       ;;
+  esac
 
-  # Send the number of matches as both an output and return code
-  echo $matches
+  # Return the number of matches to the caller.
+  echo $matchnum
 }
 
-# Given a format and a set of array keys, print the key/value pairs
-# according to the given format. The view size should be calculated,
-# if required, prior to calling the function.
-function printArray {
-  local format=$1 && shift
-  for key in $@; do
-    eval value=\$$key
-    printf "$format" "$key" "$value"
+# Given a format and an array reference, prints array values to STDOUT.
+# Note the quoting and "@" symbol, this causes Bash to expand each array
+# element to a single word, even if it contains spaces.
+function printSimpleArray {
+  local element format=$1
+  local -n array=$2;
+  for element in "${array[@]}"; do
+    printf "$format" "$element"
   done
 }
 
-# Prints an associative array, map, or hash using pass by variable
-# reference, available in Bash 4.3 and later.
-function printMap {
+# Given a format and an array reference, prints keys and values to STDOUT.
+# Note the quoting and "@" symbol, this causes Bash to expand each array
+# element to a single word, even if it contains spaces.
+function printAssociativeArray {
   local format=$1
-  local -n map=$2
-  for key in ${!map[*]}; do
-    value=${map[$key]}
-    printf "$format" "$key" "${map[$key]}"
+  local -n array=$2
+  for key in "${!array[@]}"; do
+    value=${array[$key]}
+    printf "$format" "$key" "${array[$key]}"
   done
 }
 
-# Main script (no variables may be defaulted below)
+# Main function (overridable defaults should be set above this line)
 #
-# Nasty alternative to GNU getopt(1) and Bash getopts which are harder
-# to use for rapid testing. The upshot is I get to run code with the
-# variable(s) defined in my command invocation, provided I do not have
-# an option set to restrict the options.
-#
-# The upside is some code can be fixed via the CLI, the potential downside
-# is code that's more difficult to troubleshoot or less secure. I don't
-# like that getopt(1) will accept an option as an argument, this has a
-# potential to be difficult to debug while POSIX is just annoying.
+# Simplified replacement for GNU getopt(1). This was a learning exercise
+# and the way it works makes it easier to maintain the usage function and
+# writes variables according to the flags passed. While I don't plan on
+# using the option much, I included _POSIXLY_CORRECT, an option to make
+# option processing stop at the first non-flag.
+
 declare -A _OPTIONS
+_POSIXLY_CORRECT=false
+
+# While I prefer GNU, it might be useful to include it in my scripting
+# template in case I'm prototyping something requiring that behavior.
+# One area I break from GNU is in the format of the LONGOPTS string as
+# an array and not grabbing an option that is a flag. In my opinion, this
+# makes troubleshooting easier on the commandline.
 for ((i=1; i<=$#; i++)); do
-  # Skip commands and unmatched arguments
+
+  # Enforce GNU or POSIX behavior. Debug should reflect the break.
   if [[ ! ${@:i:1} =~ ^- ]]; then
-    continue
+    if [[ ${_POSIXLY_CORRECT} == "true" ]]; then
+      eventLog debug "Stopped processing options at \"${@:i:1}\". \$_POSIXLY_CORRECT==${_POSIXLY_CORRECT}"
+      break
+    else
+      continue
+    fi
   fi
 
-  # Remove token from array without reordering
+  # Remove token from array without reordering. Note the array splice,
+  # while the removed element needs to be accounted for at the end of
+  # the loop, the identical splice may be repeated without adjustments.
   token=${@:i:1} && set -- "${@:1:i-1}" "${@:i+1}"
 
-  # If the token is identified as a help token, denoted by
-  # --help, -h, or -?, print usage and exit (escape hatch).
+  # If the token is identified as a help token, denoted by --help, -h,
+  # or -?, print usage and exit (escape hatch).
   if [[ ${token} =~ ^--help$|^-[h?] ]]; then
     usage
     exit 0
   fi
 
-  # The token "--" means stop option processing
+  # The token "--" means stop option processing. Since we already did
+  # an array shift, the value of ${@:i:1} points to a different value.
   if [[ "${token}" == "--" ]]; then
+    eventLog debug "Stopped processing options at \"${token}\"."
     break;
   fi
 
@@ -210,9 +229,6 @@ for ((i=1; i<=$#; i++)); do
     key=${key,,}
   fi
 
-  # Change dashes to underscores (compatible for use as variables)
-  key=$(echo $key | tr '-' '_')
-
   # Variables starting with "_" like "_LONGOPTS=" are considered static
   # internal definitions in my personal coding standard and should not
   # be accepted as a valid option key.
@@ -221,22 +237,24 @@ for ((i=1; i<=$#; i++)); do
     exit 1
   fi
 
-  # Restrict the options to those defined in the usage function.
+  # Restrict the options to those defined in the usage function in a
+  # case-insensitive matter (options are not case sensitive). For extra
+  # readability of the debug messages, all strings are lowercase.
   if [[ ${_RESTRICT_OPTIONS} != 0 ]]; then
-    eventLog debug "Before checking if $token is a valid option."
+    eventLog debug "Checking if ${key,,} is in the list of valid options."
     VALID_OPTIONS=(${!_LONGOPTS[*]})
-    eventLog info "Checking if ${key,,} is in ${VALID_OPTIONS[*],,}"
     matches=$(inArray ${key,,} ${VALID_OPTIONS[*],,})
     if [[ ${matches} -eq 0 ]]; then
-      eventLog err "Invalid Option: ${token} is not a valid option."
+      eventLog err "Invalid Option: ${key,,} is not a valid option."
       exit 1
     fi
-    eventLog debug "After checking if $token is a valid option."
+    eventLog debug "Option ${key,,} is in the list of valid options."
   fi
 
-  # The value, if any, is after the '=' sign. This is using a single #
-  # so any extra "=" is treated as part of the value. As a literal any
-  # leading dashes will be considered intentional, not an error.
+  # Variables may be set by explicit assignment. Thus a flag may be set
+  # to 0, 1, true, false, etc. If the list of options is not checked, an
+  # arbitrary variable within the script can be changed via commandline.
+  # If the argument does start with "--", this will match GNU behavior.
   if [[ ${token} =~ = ]]; then
     value=${token#*=}
   else
@@ -251,11 +269,14 @@ for ((i=1; i<=$#; i++)); do
   fi
 
   # If an option needs an argument, grab the next argument unless the
-  # next token appears to be an option.
+  # next token appears to be an option. The opposite is not checked.
+  # The check for an argument starting with leading dashes is neither
+  # compliant with GNU or POSIX which will consume the next option as
+  # a value, I dislike that as it complicates troubleshooting.
   eventLog debug "Checking if $key is required"
   matches=$(inArray ${key,,} ${_WITHARGS[*],,})
   if [[ $matches -ne 0 && ! -v ${value} ]]; then
-    eventLog debug "$key is required option. Checking for valid argument."
+    eventLog debug "${key} requires an argument."
     if [[ ! ${@:i:1} =~ ^- ]]; then
       value=${@:i:1} && set -- "${@:1:i-1}" "${@:i+1}"
       eventLog debug "Option \"${key}\" set to \"${value}\"."
@@ -265,17 +286,26 @@ for ((i=1; i<=$#; i++)); do
     fi
   fi
 
-  # Set key=value or key=1 if value undefined
+  # After all of the checking has been completed, this will be set as
+  # a variable so any dashes must be converted to underscores.
+  key=$(echo $key | tr '-' '_')
+
+  # If the value was not defined explicitly no value was required and the
+  # key is treated as a flag defaulting to "true". Escaped single quotes
+  # were used to avoid additional interpolation of values here.
   if [[ -n "${value}" ]]; then
-    eval ${key}="${value}"
-    eventLog info "Set the value of ${key} to \"${value}\"."
+    eval ${key}=\'${value}\'
   else
-    value=true && eval ${key}=$value
-    eventLog info "Assigned $value to \"${key}\"."
+    value=true && eval ${key}="$value"
   fi
 
+  # It is difficult to check to see if the value was not changed during
+  # shell evaluation. This could lead to some difficult debugging if it
+  # there wasn't debugging available for the assignment.
+  eventLog debug "Set ${key}=\"${value}\"."
+
   # Add the key onto the _OPTIONS array if assignment successful.
-  _OPTIONS[$key]="$value"
+  _OPTIONS[${key}]="${value}"
 
   # The current option was not evaluated. Back up the pointer to
   # keep the loop in the same place on the next execution.
@@ -284,7 +314,33 @@ done
 
 ############################################################################
 # Prototype Section
+#
+# This is where I would put my prototype code and functions. Here are small
+# tests of the code written above that weren't tested as such above.
 
 echo $0 called with $@
-echo options set:
-printMap '  * %-15.14s: %-58.57s\n' _OPTIONS
+
+echo "Options set on the CLI:"
+printAssociativeArray '  * %-15.14s: %-58.57s\n' _OPTIONS
+
+_SIMPLEARRAY=(one two three red blue green)
+echo "Simple array test (one-dimensional)"
+printSimpleArray '  * %-15.14s: %-58.57s\n' _SIMPLEARRAY
+
+echo "Simple array test two:"
+printSimpleArray '  * %-15.14s: %-58.57s\n' _OPTIONS
+
+echo "Test of the usage function"
+usage
+
+LOGLEVEL=err
+VERBOSE=true
+echo "Testing eventLog handler. Set to $LOGLEVEL (${_SEVERITY[${LOGLEVEL,,}]})"
+eventLog debug "This message should not be seen at debug priority."
+eventLog error "This message should be seen at priority error."
+eventLog err "This message should be seen at priority err."
+eventLog panic "This message should be seen at priority panic."
+LOGLEVEL=debug
+echo "Testing eventLog handler. Set to $LOGLEVEL (${_SEVERITY[${LOGLEVEL,,}]})"
+eventLog debug "This message should be seen at priority debug."
+eventLog err "This message should be seen at priority err."
