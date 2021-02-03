@@ -6,6 +6,14 @@
 # Network Address
 ADDRESS="192.168.1.10 5000"
 
+# Given the fixed address of the Tesmart KVM, a P2P interface can be used
+# to allow communication. This is an example, adding an IP alias to an
+# interface can affect dynamic DNS with sssd and other things so use with
+# caution.
+#
+# Example:
+# sudo ip addr add 192.168.1.11/31 dev eth0
+
 # The number of ports available on the KVM
 PORTS=8
 
