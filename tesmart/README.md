@@ -8,7 +8,7 @@ The Tesmart KVM uses the chipset to allow communication between the LAN and the 
 
 The factory default `192.168.1.10/24` can be changed using the Windows utility available from the [TESmart downloads page](https://buytesmart.com/pages/downloads) using either the RS232 connection or remotely (with risk of connection lost, if misconfigured).
 
-<img src="/images/tesmart_controller_2.png" alt="TESmart 8-Port Controller" width=400>
+<img src="images/tesmart_controller_2.png" alt="TESmart 8-Port Controller" width=400>
 
 If your subnet is not within this range, it is possible to add a peer-to-peer IP alias _if both systems are on the same physical network_.
 
@@ -47,7 +47,7 @@ C:\Windows\system32>
 # Controlling the KVM
 The KVM can be controlled using the Windows utility available from the [TESmart downloads page](https://buytesmart.com/pages/downloads) using either the RS232 connection or by IP remote connection.
 
-<img src="/images/tesmart_controller_1.png" alt="TESmart 8-Port Controller" width=400>
+<img src="images/tesmart_controller_1.png" alt="TESmart 8-Port Controller" width=400>
 
 ## Protocol Information
 The protocol described in the documentation is not a REST API, rather bytes of data are transmitted, either via RS232 or sending bytes to the IP socket. Whether using serial or ethernet communication, hexadecimal bytes are written to the open descriptor in the format
