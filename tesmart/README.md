@@ -1,4 +1,4 @@
-# PROTOCOL INFORMATION
+# TESmart 8- and 16-port IP-KVM switches
 
 The Tesmart HDMI KVM (8 and 16 port) offers serial and basic LAN control using an Ethernet to UART chipset similar or identical to the CH9120 or the CH9121 (http://www.chinalctech.com/m/view.php?aid=468). This device may be configurable with direct access to the UART using the supplier's configuration utility.
 
