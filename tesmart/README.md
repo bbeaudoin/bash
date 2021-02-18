@@ -45,9 +45,11 @@ C:\Windows\system32>
 ```
 
 # Controlling the KVM
-The KVM can be controlled using the Windows utility available from the [TESmart downloads page](https://buytesmart.com/pages/downloads) using either the RS232 connection or by IP remote connection.
+The KVM can be controlled using the Windows utility available from the [TESmart downloads page](https://buytesmart.com/pages/downloads) using either the RS232 connection or by IP remote connection. There is a script in this directory as well, `tesmart.sh`, that can read the current port, set a new port, and toggle documented features on/off. The API documentation from TESmart does not include information on updating the network settings using the serial or network protocol.
 
 <img src="/tesmart/images/tesmart_controller_1.png" alt="TESmart 8-Port Controller" width=400>
+
+While the API documentation goes into detail on the protocol, it can be written more succinctly. This is an attempt at providing a clearer explanation of the command sequences for controlling the KVM using the protocols.
 
 ## Protocol Information
 The protocol described in the documentation is not a REST API, rather bytes of data are transmitted, either via RS232 or sending bytes to the IP socket. Whether using serial or ethernet communication, hexadecimal bytes are written to the open descriptor in the format
@@ -71,10 +73,8 @@ On successful communication, the response is expected to return the active port 
 0xAA 0xBB 0x03 0x11 <0x..> 0xEE
 ```
 
-Should a communication error occur, the KVM may not return the expected response. It is recommended to rate limit communication by at least 1 second to avoid errors. The script in this directory follows this approach at mitigation:
+Should a communication error occur, the KVM may not return the expected response. It is recommended to rate limit communication by at least 1 second to avoid errors. The script `kvmctl.sh` here takes the following approach at mitigating errors:
 
-1. Before setting, an attempt to read the active port is retried
-1. The command is attempted unless it will not result in a change
-1. If the active port is not returned, a communication error is assumed
-
-This script is useful for automating port and other setting changes aside from changing the device's IP address configuration.
+1. Before setting, an attempt to read the active port is retried 3 times with a delay
+1. If the active port is already set, the script will not attempt to set the port again
+1. Should the active port not be returned after a command, an error is assumed
