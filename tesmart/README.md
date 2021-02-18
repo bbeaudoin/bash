@@ -1,58 +1,54 @@
-# TESmart 8- and 16-port IP-KVM switches
+# TESmart 8 and 16 port IP-KVM switches with RS232 Serial
 
 The Tesmart HDMI KVM (8 and 16 port) offers serial and basic LAN control using an Ethernet to UART chipset similar or identical to the CH9120 or the CH9121 (http://www.chinalctech.com/m/view.php?aid=468). This device may be configurable with direct access to the UART using the supplier's configuration utility.
-
-The Tesmart KVM uses the chipset to allow communication between the LAN and the UART without direct serial connection. A serial or serial to USB cable may be preferred when the switch is physically colocated with the control equipment but does not enable additional features.
-
-# IP Address and Interface Configuration
-
-The factory default `192.168.1.10/24` can be changed using the Windows utility available from the [TESmart downloads page](https://buytesmart.com/pages/downloads) using either the RS232 connection or remotely (with risk of connection lost, if misconfigured).
-
-<img src="/tesmart/images/tesmart_controller_2.png" alt="TESmart 8-Port Controller" width=400>
-
-If your subnet is not within this range, it is possible to add a peer-to-peer IP alias _if both systems are on the same physical network_.
-
-## Example 1: Adding a secondary address to an interface
-```bash
-sudo ip addr add 192.168.1.11/31 dev enp1s0
-```
-
-If it is desired to use this method permanently to communicate with the TESmart KVM, the IP alias can be added to the interface boot configuration.
-
-## Example 2: Persistent secondary address via nmcli
-```bash
-sudo nmcli con mod enp1s0 +ipv4.addresses "192.168.1.11/31"
-```
-
-Should a host be serving as a gateway but the IP needs to be accessed using another host, a persistent or non-persistent route can be added via the gateway host, provided IP routing/forwarding is enabled.
-
-## Example 3: Adding a non-persistent Linux route
-```bash
-sudo ip route add 192.168.1.10 via \<host_IP\>
-```
-
-When run as administrator, a route can be added to the gateway host using the Windows `cmd.exe` command line window.
-
-## Example 4: Using the Windows cmd.exe as Administrator
-```cmd
-Microsoft Windows [Version 10.0.19042.804]
-(c) 2020 Microsoft Corporation. All rights reserved.
-
-C:\Windows\system32>route add 192.168.1.10 mask 255.255.255.254 10.0.2.20
- OK!
-
-C:\Windows\system32>
-```
 
 # Controlling the KVM
 The KVM can be controlled using the Windows utility available from the [TESmart downloads page](https://buytesmart.com/pages/downloads) using either the RS232 connection or by IP remote connection. There is a script in this directory as well, `tesmart.sh`, that can read the current port, set a new port, and toggle documented features on/off. The API documentation from TESmart does not include information on updating the network settings using the serial or network protocol.
 
 <img src="/tesmart/images/tesmart_controller_1.png" alt="TESmart 8-Port Controller" width=400>
 
-While the API documentation goes into detail on the protocol, it can be written more succinctly. This is an attempt at providing a clearer explanation of the command sequences for controlling the KVM using the protocols.
+# IP Address and Interface Configuration
 
-## Protocol Information
-The protocol described in the documentation is not a REST API, rather bytes of data are transmitted, either via RS232 or sending bytes to the IP socket. Whether using serial or ethernet communication, hexadecimal bytes are written to the open descriptor in the format
+The factory default `192.168.1.10/24` can be changed using the Windows utility available from the [TESmart downloads page](https://buytesmart.com/pages/downloads) using either the RS232 connection or remotely. Changes are persistent when applied but do not take effect until the KVM switch is rebooted.
+
+<img src="/tesmart/images/tesmart_controller_2.png" alt="TESmart 8-Port Controller" width=400>
+
+Once the changes are made, the IP settings will be queried automatically. If corrections are not made prior to rebooting the switch, the only known way to reconfigure the IP address would be to use the RS232 3-pin serial connection and appropriate cable or converter, either RS232 to USB or RS232 to TTL.
+
+<img src="/tesmart/images/tesmart_controller_3.png" alt="TESmart 8-Port Controller" width=400>
+
+For systems connected on the same physical or layer 2 network, there are alternatives to reconfiguring the address:
+
+## Alternative 1: Adding a secondary address to an interface
+This method only works when the KVM shares the same physical or layer 2 broadcast domain.
+
+Linux: (non-persistent secondary)
+```bash
+sudo ip addr add 192.168.1.11/31 dev enp1s0
+```
+
+Linux: (persistent across reboots)
+```bash
+sudo nmcli con mod enp1s0 +ipv4.addresses "192.168.1.11/31"
+```
+
+## Alternative 2: Add a route to the host/gateway where the KVm 
+This method only works if there exists a layer 3 (IP) connection between the client and a server acting as a gateway
+
+Linux:
+```bash
+sudo ip route add 192.168.1.10 via \<host_IP\>
+```
+
+Windows:
+```bat
+route add 192.168.1.10 mask 255.255.255.254 10.0.2.20
+```
+
+Neither of those commands add persistent routes.
+
+# Protocol Information
+While the API documentation goes into detail on the protocol, this is an attempt at a more general explanation. The API is not a REST API, rather it is a set of raw bytes sent via the serial port at 9600 8n1 or via Telnet protocol to the IP address and port configured (192.168.1.10:5000 by default).
 
 ```h
 0xAA 0xBB 0x03 <0x..> <0x..> 0xEE
