@@ -37,7 +37,7 @@ This method only works if there exists a layer 3 (IP) connection between the cli
 
 Linux:
 ```bash
-sudo ip route add 192.168.1.10 via \<host_IP\>
+sudo ip route add 192.168.1.10 via <host_IP>
 ```
 
 Windows:
