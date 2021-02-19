@@ -3,16 +3,12 @@
 # been hardcoded due to limited functionality, a full description of the
 # device and the protocol is in a separate .md file in the git repo.
 
-# Network Address
-ADDRESS="192.168.1.10 5000"
+# Default Address and Port
+ADDRESS="192.168.1.10"
+PORT="5000"
 
-# Given the fixed address of the Tesmart KVM, a P2P interface can be used
-# to allow communication. This is an example, adding an IP alias to an
-# interface can affect dynamic DNS with sssd and other things so use with
-# caution.
-#
-# Example:
-# sudo ip addr add 192.168.1.11/31 dev eth0
+# Custom Address and Port
+ADDRESS="10.0.2.12"
 
 # The number of ports available on the KVM
 PORTS=8
@@ -30,14 +26,16 @@ function usage {
 }
 
 # If communication fails, a value outside of range, "0xFF", so when it
-# has been received by the caller there is an option to retry. Enforce
-# a one-second sleep in-between retries here.
+# has been received by the caller there is an option to retry.
 function sendCommand {
+  # Delay between commands
+  sleep 1
+
+  # Preamble AABB03 + Token/Value + EE
   echo -e "AABB03${1}EE" | \
     xxd -r -p | \
-    nc 192.168.1.10 5000 | \
+    nc ${ADDRESS} ${PORT} | \
     xxd -s4 -l1 -p 2>/dev/null || echo ff
-  sleep 1
 }
 
 # Mutes and unmutes the buzzer. We receive the output from the "API" but
@@ -60,7 +58,7 @@ function setBuzzer {
 # Sets the timeout value of the LCD. This does not appear to affect the
 # LED lighting on the 8-port Tesmart switch but does appear on the 16-port
 # documentation. This is treated similar to the buzzer settings.
-function setLCDTimeout {
+function setTimeout {
   case $1 in
     0) out=$(sendCommand "0300")
        echo "LCD Timeout Disabled."
@@ -124,6 +122,15 @@ function setPort {
   echo "Port changed from ${oldport} to ${newport}."
 }
 
+function setAuto {
+  if [[ ${1} -lt 0 || ${1} -gt 1 ]]; then
+    echo "Invalid port specified. Range is 1 to $PORTS."
+    exit 1
+  fi
+  hexval=$(printf '%.2X\n' ${1})
+  out=$(sendCommand "81${hexval}")
+}
+
 # Simple case statement to process the options
 case $1 in
   get) echo "The current port is $(getPort)";
@@ -132,7 +139,9 @@ case $1 in
     ;;
   buzzer) setBuzzer $2;
     ;;
-  lcd) setLCDTimeout $2;
+  lcd) setTimeout $2;
+    ;;
+  auto) setAuto $2;
     ;;
   *) usage
 esac
