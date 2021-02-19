@@ -56,14 +56,15 @@ While the API documentation goes into detail on the protocol, this is an attempt
 
 The preamble is always `0xAA 0xBB 0x03`. The two following bytes describe the option and value. When reading, the value is ignored. `0xEE` is the expected termination string of the pattern.
 
-```
-0x01 - Change the active KVM port (1-based index from 0x01-0x10)
-0x02 - Set the buzzer on or off (0x00 for off, 0x01 for on)
-0x03 - Set the display timeout (0x00, 0x0A, 0x1E for never, 10s, 30s)
-0x10 - Read the active port number (0-based index from 0x00-0x0f)
-```
+| Token | Value | Description |
+|:--- |:--- |:--- |
+| `0x01` | `0x01-0x10` | Change the active KVM port (1-8 or 1-16) |
+| `0x02` | `0x00-0x01` | Set the buzzer off or on |
+| `0x03` | `0x00, 0x0A, 0x1E` | Set the display timeout (Never, 10s, 30s) |
+| `0x81` | `0x00-0x01` | Disable/Enable Input Detection |
+| `0x10` | `0x00` | Read the active port number (0-7 or 0-15) |
 
-On successful communication, the response is expected to return the active port number before `0xEE`.
+The documentation states the return will be `0xAA 0xBB 0x03 0x11 <0x..> 0xEE` but may not always return valid data. When invalid data is returned, the script based on the protocol information will return `FF` as the output, unless the port is changed the response is ignored.
 
 ```h
 0xAA 0xBB 0x03 0x11 <0x..> 0xEE
@@ -74,3 +75,17 @@ Should a communication error occur, the KVM may not return the expected response
 1. Before setting, an attempt to read the active port is retried 3 times with a delay
 1. If the active port is already set, the script will not attempt to set the port again
 1. Should the active port not be returned after a command, an error is assumed
+
+The sample script takes the following options:
+
+```bash
+$ kvmctl
+kvmctl -- Controls a Tesmart KVM using TCP/IP
+Usage:
+  kvmctl get           : Retrieves the active port number.
+  kvmctl set <1-8>     : Retrieves the active port number.
+  kvmctl buzzer <0|1>  : Turns the buzzer off (0) or on (1).
+  kvmctl lcd <0|10|30> : Disable or set the LCD timeout.
+  kvmctl auto <0|1>    : Disable or enable auto input detection.
+$
+```
