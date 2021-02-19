@@ -19,7 +19,7 @@ Once the changes are made, the IP settings will be queried automatically. If cor
 
 For systems connected on the same physical or layer 2 network, there are alternatives to reconfiguring the address:
 
-## Alternative 1: Adding a secondary address to an interface
+### Alternative 1: Adding a secondary address to an interface
 This method only works when the KVM shares the same physical or layer 2 broadcast domain.
 
 Linux: (non-persistent secondary)
@@ -32,7 +32,7 @@ Linux: (persistent across reboots)
 sudo nmcli con mod enp1s0 +ipv4.addresses "192.168.1.11/31"
 ```
 
-## Alternative 2: Add a route to the host/gateway where the KVm 
+### Alternative 2: Add a route to the host/gateway to the KVM host/network
 This method only works if there exists a layer 3 (IP) connection between the client and a server acting as a gateway
 
 Linux:
