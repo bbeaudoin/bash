@@ -1,42 +1,71 @@
 #!/bin/bash -e
-# Simple control over a Tesmart KVM using the LAN port. Much of this has
-# been hardcoded due to limited functionality, a full description of the
-# device and the protocol is in a separate .md file in the git repo.
+# Simple control over a TESmart KVM using the LAN port or TX/RX connector.
+# Much of this has been hardcoded due to limited functionality, a full description
+# of the device and the protocol is in a separate .md file in the git repo.
 
-# Default Address and Port
+# Default configuration
+
 ADDRESS="192.168.1.10"
 PORT="5000"
 
-# Custom Address and Port
-ADDRESS="10.0.2.12"
+DEVICE="/dev/ttyAMA0"
+SPEED="9600"
+
+# Custom configuration
+#ADDRESS=""
+DEVICE=""
 
 # The number of ports available on the KVM
-PORTS=8
+PORTS=16
 
 # Prints the command usage and exits
 function usage {
   progname=$(basename $0)
-  echo "$progname -- Controls a Tesmart KVM using TCP/IP"
+  echo "$progname -- Controls a TESmart KVM using TCP/IP or RS-232"
   echo "Usage:"
-  printf "  %-21.20s: %-20s\n" "${progname} get" "Retrieves the active port number."
-  printf "  %-21.20s: %-20s\n" "${progname} set <1-${PORTS}>" "Retrieves the active port number."
-  printf "  %-21.20s: %-20s\n" "${progname} buzzer <0|1>" "Turns the buzzer off (0) or on (1)."
-  printf "  %-21.20s: %-20s\n" "${progname} lcd <0|10|30>" "Disable or set the LCD timeout."
-  printf "  %-21.20s: %-20s\n" "${progname} auto <0|1>" "Disable or enable auto input detection."
+  printf "  %-24.23s: %-20s\n" "${progname} get" "Retrieves the active port number."
+  printf "  %-24.23s: %-20s\n" "${progname} set <1-${PORTS}>" "Retrieves the active port number."
+  printf "  %-24.23s: %-20s\n" "${progname} buzzer <0|1>" "Turns the buzzer off (0) or on (1)."
+  printf "  %-24.23s: %-20s\n" "${progname} lcd <0|10|30>" "Disable or set the LCD timeout."
+  printf "  %-24.23s: %-20s\n" "${progname} auto <0|1>" "Disable or enable auto input detection."
   exit 0;
 }
 
 # If communication fails, a value outside of range, "0xFF", so when it
 # has been received by the caller there is an option to retry.
 function sendCommand {
-  # Delay between commands
-  sleep 1
-
   # Preamble AABB03 + Token/Value + EE
-  echo -e "AABB03${1}EE" | \
-    xxd -r -p | \
-    nc ${ADDRESS} ${PORT} | \
-    xxd -s4 -l1 -p 2>/dev/null || echo ff
+  request="aabb03${1}ee"
+
+  # Send to serial or via network depending on device
+  if [ ! -z "$DEVICE" ]; then
+    # Without raw buffering makes reads wait for newline characters which never come.
+    response=$(
+      stty -F $DEVICE speed $SPEED raw >/dev/null \
+      && echo -n $request | xxd -r -p | socat - $DEVICE | xxd -p 2>/dev/null \
+      || echo ff
+    )
+  else  
+    # Network communication requires a delay for stability.
+    sleep 1
+
+    # The -l6 is required to read response without waiting for a newline.
+    # Beware gnu-netcat hangs waiting for something, openbsd-netcat works fine.
+    response=$(
+      echo $request | xxd -r -p | nc ${ADDRESS} ${PORT} | xxd -p -l6 2>/dev/null \
+      || echo ff
+    )
+  fi
+
+  if [[ $response == ff ]]; then
+    echo "Unable to send request $request or read response." >&2
+    echo $response
+  elif [[ ! $response == aabb03* ]]; then
+    echo "Unrecognized response $response for request $request." >&2
+    echo ff
+  else
+    echo $response | cut -c 9-10
+  fi
 }
 
 # Mutes and unmutes the buzzer. We receive the output from the "API" but
@@ -134,7 +163,7 @@ function setAuto {
 
 # Simple case statement to process the options
 case $1 in
-  get) echo "The current port is $(getPort)";
+  get) echo "The current port is: $(getPort)";
     ;;
   set) setPort $2;
     ;;
