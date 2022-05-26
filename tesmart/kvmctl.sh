@@ -18,11 +18,11 @@ function usage {
   progname=$(basename $0)
   echo "$progname -- Controls a Tesmart KVM using TCP/IP"
   echo "Usage:"
-  printf "  %-21.20s: %-20s\n" "${progname} get" "Retrieves the active port number."
-  printf "  %-21.20s: %-20s\n" "${progname} set <1-${PORTS}>" "Retrieves the active port number."
-  printf "  %-21.20s: %-20s\n" "${progname} buzzer <0|1>" "Turns the buzzer off (0) or on (1)."
-  printf "  %-21.20s: %-20s\n" "${progname} lcd <0|10|30>" "Disable or set the LCD timeout."
-  printf "  %-21.20s: %-20s\n" "${progname} auto <0|1>" "Disable or enable auto input detection."
+  printf "  %-24.23s: %-20s\n" "${progname} get" "Retrieves the active port number."
+  printf "  %-24.23s: %-20s\n" "${progname} set <1-${PORTS}>" "Retrieves the active port number."
+  printf "  %-24.23s: %-20s\n" "${progname} buzzer <0|1>" "Turns the buzzer off (0) or on (1)."
+  printf "  %-24.23s: %-20s\n" "${progname} lcd <0|10|30>" "Disable or set the LCD timeout."
+  printf "  %-24.23s: %-20s\n" "${progname} auto <0|1>" "Disable or enable auto input detection."
   exit 0;
 }
 
