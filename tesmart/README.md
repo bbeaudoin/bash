@@ -1,33 +1,36 @@
 # TESmart 8 and 16 port IP-KVM switches with RS232 Serial
 
-The Tesmart HDMI KVM (8 and 16 port) offers serial and basic LAN control using an Ethernet to UART chipset similar or identical to the CH9120 or the CH9121 (http://www.chinalctech.com/m/view.php?aid=468). This device may be configurable with direct access to the UART using the supplier's configuration utility.
+The Tesmart HDMI KVM (8 and 16 port) offers serial and basic LAN control using an Ethernet to UART chipset similar or identical to the CH9120 or the CH9121 (http://www.chinalctech.com/m/view.php?aid=468). This device may be configurable with direct access to the UART using the supplier's configuration utility. Waveshare has documentation on a board with that chip at (https://www.waveshare.com/w/upload/e/ef/CH9121_SPCC.pdf).
+
+Note, I have not verified the chip in the TESmart network module so the information may not apply. I ran a packet capture to see how the address information is configured but I caution against using this information to update the network configuration. This information and these scripts are provided as-is with no warranty, using this information and these scripts are at your own risk.
 
 # Controlling the KVM
-The KVM can be controlled using the Windows utility available from the [TESmart downloads page](https://buytesmart.com/pages/downloads) using either the RS232 connection or by IP remote connection. There is a script in this directory as well, `tesmart.sh`, that can read the current port, set a new port, and toggle documented features on/off. The API documentation from TESmart does not include information on updating the network settings using the serial or network protocol.
+The KVM can be controlled using the Windows utility available from the [TESmart downloads page](https://buytesmart.com/pages/downloads) using either the RS232 connection or by IP remote connection. There is a script in this directory as well, `tesmart.sh`, that can read the current port, set a new port, and toggle documented features on/off.
 
+While the API documentation from TESmart does not include information on updating the network settings using the serial or network protocol, the controller traffic indicates configuration is performed using ASCII commands. Assuming the CH9121, I checked the Waveshare documentation on their board and how to set the IP address information, it appears this may be handled on the serial side of the controller: [CH9121 SPCC (PDF)](https://www.waveshare.com/w/upload/e/ef/CH9121_SPCC.pdf). TESmart recently switched from a 10/100 Mbps controller to a 10 Mbps one that is incompatible with 2.5/5/10 Gbps Ethernet, I photographed the boards but have not identified the chips.
 <img src="/tesmart/images/tesmart_controller_1.png" alt="TESmart 8-Port Controller" width=400>
 
 # IP Address and Interface Configuration
 
-The factory default `192.168.1.10/24` can be changed using the Windows utility available from the [TESmart downloads page](https://buytesmart.com/pages/downloads) using either the RS232 connection or remotely. Changes are persistent when applied but do not take effect until the KVM switch is rebooted.
+My personal recommendation is to use the controller and documentation from the [TESmart downloads page](https://buytesmart.com/pages/downloads). The factory default `192.168.1.10/24` and may be changed using either the RS232 connection or remotely. Once applied, the changes are persisted but do not take effect until the KVM has been rebooted.
 
 <img src="/tesmart/images/tesmart_controller_2.png" alt="TESmart 8-Port Controller" width=400>
 
-Once the changes are made, the IP settings will be queried automatically. If corrections are not made prior to rebooting the switch, the only known way to reconfigure the IP address would be to use the RS232 3-pin serial connection and appropriate cable or converter, either RS232 to USB or RS232 to TTL.
+WARNING, confirm the IP settings before rebooting the KVM. The TESmart enterprise switch doesn't have a "factory reset" to my knowledge. If it is not possible to make a network connection to the KVM after a reboot and the settings are unknown (not default or the intended settings), the only known way to reconfigure the IP address would be to use the RS232 3-pin serial connection and appropriate cable or converter, either RS232 to USB or RS232 to TTL, to connect to the switch.
 
 <img src="/tesmart/images/tesmart_controller_3.png" alt="TESmart 8-Port Controller" width=400>
 
 For systems connected on the same physical or layer 2 network, there are alternatives to reconfiguring the address:
 
 ### Alternative 1: Adding a secondary address to an interface
-This method only works when the KVM shares the same physical or layer 2 broadcast domain.
+This method only works when the KVM shares the same physical or layer 2 broadcast domain. This can be helpful if the network settings are known but are not within the normal network's valid range on an unsegmented layer 2 or shared VLAN if needed to reconfigure the networking on the switch.
 
-Linux: (non-persistent secondary)
+Linux: (non-persistent secondary address, change `enp1s0` to your device name)
 ```bash
 sudo ip addr add 192.168.1.11/31 dev enp1s0
 ```
 
-Linux: (persistent across reboots)
+Linux: (persistent across reboots, change `enp1s0` to your connection name)
 ```bash
 sudo nmcli con mod enp1s0 +ipv4.addresses "192.168.1.11/31"
 ```
@@ -91,7 +94,9 @@ $
 ```
 ## Setting and querying the IP address configuration
 
-Ran a packet capture today and shared this with an interested group, adding here to capture this for others who might be interested. The serial interface responds to simple commands in ASCII to set the IP, port, gateway, and netmask. The TCP packet sent looks like this:
+This information was gathered using Wireshark to capture packets from my client to the TESmart KVM. While it may be possible to use this information as an alternative to the controller, an inproper network configuration may leave the KVM unreachable and if it is not possible to re-establish connection or the connection information was not recorded, it may not be possible to reconfigure the network interface without an RS232 connection.
+
+The protocol seems to be simple ASCII commands from client to server without the TESmart API pre-amble or syntax.
 
 ```
 0000   72 a7 41 ad 31 58 2c db 07 32 63 ec 08 00 45 00   r.A.1X,..2c...E.
@@ -101,7 +106,7 @@ Ran a packet capture today and shared this with an interested group, adding here
 0040   31 32 3b                                          12;
 ```
 
-The system responds with an ACK, then responds with "OK". The general send, acknowledge, response, acknowledge is part of TCP so I'll omit it. The dialogue looks like this:
+If the command is accepted as valid, the system responds with "OK". The data payloads of the communication are recorded below with comments between blocks offering some interpretation based on the behavior of the system. The first section is configuring basic networking with a known good established connection.
 
 ```
 Client: IP:10.0.2.12;
@@ -114,21 +119,16 @@ Client: MA:255.255.255.0;
 Server: OK
 ```
 
-After the last `OK` is received, the client reports success or failure. Then it asks the KVM for the current configuration and updates the response readout in the controller interface.
+It may be assumed the information is persisted immediately prior to the system returning "OK". If that assumption holds true, more efficient updates may be possible. However, incomplete updates or invalid information can leave the KVM unable to communicate properly on the network.
+
+The controller follows up with a set of queries to refresh the configuration. Hitting the "Query" button is identical to the call made after applying existing or updated settings. The conversation to query the current network configuration looks like this:
 
 ```
-After the conversation is complete, the client asks for a readout.
 Client: IP?
 Server: IP:010.000.002.012
 Server: ;
 Client: PT?
 Server: PT:05000;
-Server: Asynchronously indicates the active port is port 7 (aa bb 03 11 06 1c)
-```
-
-There may be some trailing characters but, as the data length is declared to be 6 characters, this is flagged as a malformed packet by Wireshark, the trailing data is not present. The `1c` technically violates the documented API but, since it is sent without a request, it may be an indication that it is not in direct response to any query made by the client. Strangely the client records the response in the network configuration panel on the "Gateway:" line because that is what it is expecting, the client is not sanitizing inputs or outputs, it's just printing raw characters where the cusor is pointed.
-
-```
 Client: GW?
 Server: GW:010.000.002.001
 Server: ;
@@ -137,8 +137,25 @@ Server: MA:255.255.255.000
 Server: ;
 ```
 
+The client will display the readout as follows:
+
+```
+IP: 010.000.002.012
+Port: 05000
+Gate way: 010.000.002.001
+Mask: 255.255.255.000
+```
+
+## Server Limitations
+
+It appears the maximum transmission unit (MTU) is 48 bytes. When the amount of data in the buffer exceeds this size, the payload will be split between two packets explaining why the ";" character is sent as a separate message.
+
+## Errors while reading/writing data
+
+Occasionally or when the port is changed using another interface, the TESmart will send a message indicating the current port number if a client is connected. If the client is in the process of sending or receiving information, it may not handle these updates appropriately. While querying the network information, the official controller will print the update as if it was information received at the cursor's current location, even if it had not yet sent the command to query. This is a bug in the controller code.
+
+These updates do not appear to occur at regular intervals, at least not in the packet capture. It is unknown whether these asynchronous updates are generated during configuration. If so the response after acknowledgement may not be "OK", rather an instruction for the client to refresh the active port. A well-behaved client would discard the message or push it to a stack or queue so it's not missed and look instead for the actual response, be it "OK" or another response indicating an actual error. The asynchronous nature of communication can explain why short-lived read/write connections may not receive expected responses when opened and closed quickly.
+
 ## Handling the connection
 
-The connection is established as a normal TCP/IP connection. Updates to the network configuration does not seem to be applied until the connection is severed (though I don't recall if a reboot is needed or if severing the connection commits the transaction and resets the IP address information). I didn't keep the connection open long enough to establish an expected timing for the asynchronous updates. I also don't know why the trailing ";" was sent in a follow-up packet, the chip used for communication may be limited to 18 bytes.
-
-Port changes made while the connection is opened are transmitted immediately. When the connection is closed, updates on the port status stop.
+If writing a client, a normal TCP/IP connection established can send and receive communication as a stream. Although the API states messages will always end in `0xEE`, values of `0x16` and `0x1c` have been observed as terminating characters, the important characters are `0xAA 0xBB 0x03 0x11` followed by one byte of data and a termination byte, regardless of value. If ASCII is received, it is likely to be in response to applying network configuration or querying network configuration. The messages may be handled with or without threading as long as unexpected updates are expected and treated accordingly. Upon proper closing of a connection, the server will stop sending updates via TCP/IP even if serial data is still observed by the serial-to-network interface.
